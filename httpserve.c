@@ -210,14 +210,26 @@ void handle_post_request(int client_sock, const char* path) {
     }
 }
 
-void send_response(int client_sock, const char *header, const char *content, int content_length) {
-    if (content != NULL) {
-        send(client_sock, header, strlen(header), 0);
-        send(client_sock, content, content_length, 0);
-    } else {
-        send(client_sock, header, strlen(header), 0);
+void send_response(int client_sock, const char *header, const char *content_type, const char *body, int body_length) {
+    // Send the HTTP header first
+    send(client_sock, header, strlen(header), 0);
+
+    // Append content type if provided
+    if (content_type != NULL) {
+        send(client_sock, "Content-Type: ", 14, 0);
+        send(client_sock, content_type, strlen(content_type), 0);
+        send(client_sock, "\r\n", 2, 0);
+    }
+
+    // Append a new line after the header (end of header section)
+    send(client_sock, "\r\n", 2, 0);
+
+    // If there is a body to send, send it
+    if (body != NULL && body_length > 0) {
+        send(client_sock, body, body_length, 0);
     }
 }
+
 
 const char* get_mime_type(const char *filename) {
     const char *dot = strrchr(filename, '.');
