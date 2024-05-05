@@ -6,10 +6,11 @@
 #include <netinet/in.h>
 #include <sys/stat.h>
 #include <fcntl.h> 
+#include <sys/wait.h>
 #include <errno.h> // Include the necessary header file
 #include "httpserve.h"
 #define BACKLOG 32 
-#define SERVER_ROOT "/Users/oscarv/Desktop/web/"
+#define SERVER_ROOT "/home/oscar/Desktop/www/"
 #define SERVER_PORT 8080 // Default server port
 
 char http_header[2048];
