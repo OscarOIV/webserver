@@ -4,12 +4,18 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/stat.h>
+#include <fcntl.h> 
+#include <errno.h> // Include the necessary header file
 #include "httpserve.h"
 #define BACKLOG 32 
-#define SERVER_ROOT "www/" 
+#define SERVER_ROOT "/Users/oscarv/Desktop/web/"
+#define SERVER_PORT 8080 // Default server port
 
-int main(int argc, char *argv[]) {// TODO: Parse command line arguments to override default port if necessary
-int port = SERVER_PORT;
+char http_header[2048];
+
+int main(int argc, char *argv[]) {
+    int port = SERVER_PORT;
     if (argc > 1) {
         port = atoi(argv[1]); 
         if (port <= 0) {
@@ -18,7 +24,29 @@ int port = SERVER_PORT;
         }
     }
 
-    start_server(SERVER_PORT);
+    FILE *html_file = fopen("index.html", "r");
+    if (html_file == NULL) {
+        perror("Failed to open index.html");
+        exit(EXIT_FAILURE);
+    }
+
+    char response_data[1024];
+    size_t data_length = fread(response_data, 1, sizeof(response_data) - 1, html_file);
+    response_data[data_length] = '\0';
+    fclose(html_file);
+
+    int header_length = snprintf(http_header, sizeof(http_header),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html\r\n"
+        "Content-Length: %zu\r\n"
+        "\r\n%s", data_length, response_data);
+
+    if (header_length >= sizeof(http_header)) {
+        fprintf(stderr, "Header buffer too small\n");
+        exit(EXIT_FAILURE);
+    }
+
+    start_server(port);
     return 0;
 }
 
@@ -35,8 +63,7 @@ int create_socket(int port) {
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
+    struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
@@ -59,17 +86,18 @@ int create_socket(int port) {
 void handle_connections(int server_sock) {
     struct sockaddr_in client_addr;
     socklen_t client_addrlen = sizeof(client_addr);
-    
-    while (1) {
-        int client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addrlen);
-        if (client_sock < 0) {
-            perror("Error accepting connection");
-            continue;
-        }
+    int client_sock;
 
+    while ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addrlen)) >= 0) {
         process_request(client_sock);
     }
+
+    if (client_sock < 0) {
+        perror("Error accepting connection");
+    }
 }
+
+
 void process_request(int client_sock) {
     char buffer[4096]; // Buffer to store the request
     int bytes_read = read(client_sock, buffer, sizeof(buffer) - 1); // Read the request from the client socket
@@ -82,7 +110,6 @@ void process_request(int client_sock) {
 
     buffer[bytes_read] = '\0'; // Null-terminate the buffer to create a valid string
 
-    // Parse the request line
     char *method, *path, *protocol, *saveptr;
     method = strtok_r(buffer, " ", &saveptr); // Extract the method from the request
     path = strtok_r(NULL, " ", &saveptr); // Extract the path from the request
@@ -111,145 +138,173 @@ void process_request(int client_sock) {
 }
 
 void handle_get_request(int client_sock, const char* path) {
+
+
+
+     char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        fprintf(stderr, "Current working dir: %s\n", cwd);
+    } else {
+        perror("getcwd() error");
+        return;
+    }
+
     char filepath[1024];
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
+    snprintf(filepath, sizeof(filepath), "%sindex.html", SERVER_ROOT);
+    fprintf(stderr, "Attempting to open file at path: %s\n", filepath);
 
-    // Check for illegal path characters to prevent directory traversal
-    if (strstr(path, "../") || strstr(path, "//")) {
-        const char *response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, response, strlen(response), 0);
+    int file_fd = open(filepath, O_RDONLY);
+    if (file_fd < 0) {
+        perror("Error opening index.html");  // Log the error with specifics
+        char error_message[1024];
+        
+
+        snprintf(error_message, sizeof(error_message), "500 Internal Server Error: Unable to open index.html. Error: %s", strerror(errno));
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", error_message, strlen(error_message));
+        return;
+    }
+    // Fixed path to 'index.html' in the server root directory
+    
+    snprintf(filepath, sizeof(filepath), "%sindex.html", SERVER_ROOT); 
+
+    // Attempt to open the 'index.html' file
+;
+    if (file_fd < 0) {
+        fprintf(stderr, "Error opening the file"); // If opening the file fails, send a 500 Internal Server Error response
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to open index.html.", 0);
         return;
     }
 
-    FILE *file = fopen(filepath, "rb");
-    if (file == NULL) {
-        const char *response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, response, strlen(response), 0);
+    // Get file details to determine its size
+    struct stat file_stat;
+    if (fstat(file_fd, &file_stat) < 0) {
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to read file stats.", 0);
+        close(file_fd);
         return;
     }
 
-    // Move to the end of the file to determine the file size
-    fseek(file, 0, SEEK_END);
-    long filesize = ftell(file);
-    rewind(file);
-
-    // Send the HTTP response headers
-    char header[1024];
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n", filesize);
-    send(client_sock, header, strlen(header), 0);
-
-    // Send the file content
-    char buffer[1024];
-    size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        send(client_sock, buffer, bytes_read, 0);
+    // Allocate memory for the file content and read the file into this buffer
+    char *file_content = malloc(file_stat.st_size + 1);
+    if (read(file_fd, file_content, file_stat.st_size) < 0) {
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Error reading file.", 0);
+        free(file_content);
+        close(file_fd);
+        return;
     }
+    file_content[file_stat.st_size] = '\0';  // Null-terminate the content
 
-    fclose(file);
+    // Construct and send the HTTP response with the file content
+    send_response(client_sock, "HTTP/1.1 200 OK", "text/html", file_content, file_stat.st_size);
+
+    // Clean up
+    free(file_content);
+    close(file_fd);
 }
+
+
+
 
 
 void handle_head_request(int client_sock, const char* path) {
-    char filepath[1024];
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
+    char filepath[512]; // Buffer to store the full path to the file
+    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path); // Construct the full path
 
-    // Check for illegal path characters to prevent directory traversal
-    if (strstr(path, "../") || strstr(path, "//")) {
-        const char *response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, response, strlen(response), 0);
+    // Prevent directory traversal security issues
+    if (strstr(path, "..") != NULL) {
+        const char *error_response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, error_response, strlen(error_response), 0);
         return;
     }
 
-    FILE *file = fopen(filepath, "rb");
-    if (file == NULL) {
-        const char *response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, response, strlen(response), 0);
+    struct stat file_stat;
+    if (stat(filepath, &file_stat) < 0 || S_ISDIR(file_stat.st_mode)) {
+        // File does not exist or is a directory
+        const char *not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, not_found_response, strlen(not_found_response), 0);
         return;
     }
 
-    // Move to the end of the file to determine the file size
-    fseek(file, 0, SEEK_END);
-    long filesize = ftell(file);
-    fclose(file);
-
-    // Send the HTTP response headers
-    char header[1024];
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n", filesize);
-    send(client_sock, header, strlen(header), 0);
+    // Prepare and send the headers that a corresponding GET request would return
+    char header[256];
+snprintf(header, sizeof(header),
+         "HTTP/1.1 200 OK\r\n"
+         "Content-Type: text/html\r\n"
+         "Content-Length: %lld\r\n\r\n", (long long)file_stat.st_size);
+send(client_sock, header, strlen(header), 0);
 }
 
 void handle_post_request(int client_sock, const char* path) {
-    char filepath[1024];
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
+    char filepath[512];  // Buffer for constructing the full path to the resource
+    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path); // Combine SERVER_ROOT with the path
 
-    // Check if the requested path is a CGI script by extension
-    if (strstr(path, ".cgi") != NULL) {
-        FILE *pipe = popen(filepath, "r"); // Execute the CGI script using popen
-        if (pipe == NULL) {
-            const char *response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-            send(client_sock, response, strlen(response), 0);
-            return;
+    // Check if the path corresponds to a CGI script
+    if (strstr(filepath, ".cgi") != NULL) {
+        int pid = fork();  // Create a new process
+        if (pid == 0) {    // Child process
+            // Set the environment variable REQUEST_METHOD
+            setenv("REQUEST_METHOD", "POST", 1);
+
+            // Duplicate socket on stdout and stderr
+            dup2(client_sock, STDOUT_FILENO);
+            dup2(client_sock, STDERR_FILENO);
+
+            // Execute the CGI script
+            execl(filepath, filepath, NULL);
+            perror("Failed to execute CGI script");
+            exit(EXIT_FAILURE);
+        } else if (pid > 0) {  // Parent process
+            int status;
+            waitpid(pid, &status, 0);  // Wait for the script to finish
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                const char *error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+                send(client_sock, error_response, strlen(error_response), 0);
+            }
+        } else {  // Fork failed
+            const char *error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+            send(client_sock, error_response, strlen(error_response), 0);
         }
-
-        // Prepare to capture the output of the script
-        char buffer[1024];
-        size_t bytes_read;
-        const char *header = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n";
-        send(client_sock, header, strlen(header), 0);  // Send header with a simple Content-Type
-
-        // Read the script's output and send it to the client
-        while ((bytes_read = fread(buffer, 1, sizeof(buffer), pipe)) > 0) {
-            send(client_sock, buffer, bytes_read, 0);
-        }
-
-        pclose(pipe);
     } else {
-        // If not a CGI script, respond with 404 Not Found
-        const char *response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, response, strlen(response), 0);
+        const char *not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, not_found_response, strlen(not_found_response), 0);
     }
 }
-
 void send_response(int client_sock, const char *header, const char *content_type, const char *body, int body_length) {
-    // Send the HTTP header first
-    send(client_sock, header, strlen(header), 0);
+    char response_header[1024]; // Buffer for the HTTP response header
 
-    // Append content type if provided
-    if (content_type != NULL) {
-        send(client_sock, "Content-Type: ", 14, 0);
-        send(client_sock, content_type, strlen(content_type), 0);
-        send(client_sock, "\r\n", 2, 0);
-    }
+    // Construct the response header
+    int header_length = snprintf(response_header, sizeof(response_header),
+                                 "%s\r\n"
+                                 "Content-Type: %s\r\n"
+                                 "Content-Length: %d\r\n"
+                                 "\r\n",
+                                 header, content_type, body_length);
 
-    // Append a new line after the header (end of header section)
-    send(client_sock, "\r\n", 2, 0);
+    // Send the header
+    send(client_sock, response_header, header_length, 0);
 
-    // If there is a body to send, send it
-    if (body != NULL && body_length > 0) {
+    // Send the body if it exists and body_length is greater than 0
+    if (body && body_length > 0) {
         send(client_sock, body, body_length, 0);
     }
 }
 
 
+
 const char* get_mime_type(const char *filename) {
-    const char *dot = strrchr(filename, '.');
-    if (dot == NULL) {
-        return "text/html"; // Default MIME type
+    const char *dot = strrchr(filename, '.'); // Find the last occurrence of '.'
+
+    if (!dot || dot == filename) {
+        return "application/octet-stream"; // Default MIME type for unknown files
     }
 
-    if (strcmp(dot, ".html") == 0) {
-        return "text/html";
-    } else if (strcmp(dot, ".css") == 0) {
-        return "text/css";
-    } else if (strcmp(dot, ".js") == 0) {
-        return "application/javascript"; // Correct MIME type for JavaScript
-    } else if (strcmp(dot, ".jpg") == 0 || strcmp(dot, ".jpeg") == 0) {
-        return "image/jpeg";
-    } else if (strcmp(dot, ".png") == 0) {
-        return "image/png";
-    } else if (strcmp(dot, ".gif") == 0) {
-        return "image/gif";
-    } else {
-        return "text/html"; // Default MIME type
-    }
+    // Compare the extension and return the MIME type
+    if (strcmp(dot, ".html") == 0) return "text/html";
+    else if (strcmp(dot, ".css") == 0) return "text/css";
+    else if (strcmp(dot, ".js") == 0) return "application/javascript";
+    else if (strcmp(dot, ".png") == 0) return "image/png";
+    else if (strcmp(dot, ".jpeg") == 0 || strcmp(dot, ".jpg") == 0) return "image/jpeg";
+    else if (strcmp(dot, ".gif") == 0) return "image/gif";
+    else if (strcmp(dot, ".txt") == 0) return "text/plain";
+
+    return "application/octet-stream"; // Fallback MIME type
 }
