@@ -24,29 +24,6 @@ int main(int argc, char *argv[]) {
             port = SERVER_PORT;  
         }
     }
-
-    FILE *html_file = fopen("index.html", "r");
-    if (html_file == NULL) {
-        perror("Failed to open index.html");
-        exit(EXIT_FAILURE);
-    }
-
-    char response_data[1024];
-    size_t data_length = fread(response_data, 1, sizeof(response_data) - 1, html_file);
-    response_data[data_length] = '\0';
-    fclose(html_file);
-
-    int header_length = snprintf(http_header, sizeof(http_header),
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html\r\n"
-        "Content-Length: %zu\r\n"
-        "\r\n%s", data_length, response_data);
-
-    if (header_length >= sizeof(http_header)) {
-        fprintf(stderr, "Header buffer too small\n");
-        exit(EXIT_FAILURE);
-    }
-
     start_server(port);
     return 0;
 }
