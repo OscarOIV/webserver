@@ -116,65 +116,48 @@ void process_request(int client_sock) {
 }
 
 void handle_get_request(int client_sock, const char* path) {
-
-
-
-     char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        fprintf(stderr, "Current working dir: %s\n", cwd);
-    } else {
-        perror("getcwd() error");
+    char filepath[1024];
+    if (strstr(path, "../") != NULL || strstr(path, "./") != NULL) {
+        // Basic protection against directory traversal attacks
+        send_response(client_sock, "HTTP/1.1 400 Bad Request", "text/html", "Bad Request: Invalid path.", 0);
         return;
     }
 
-    char filepath[1024];
-    snprintf(filepath, sizeof(filepath), "%sindex.html", SERVER_ROOT);
-    fprintf(stderr, "Attempting to open file at path: %s\n", filepath);
+    // Construct the full path to the file
+    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
 
     int file_fd = open(filepath, O_RDONLY);
     if (file_fd < 0) {
-        perror("Error opening index.html");  // Log the error with specifics
-        char error_message[1024];
-        
-
-        snprintf(error_message, sizeof(error_message), "500 Internal Server Error: Unable to open index.html. Error: %s", strerror(errno));
-        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", error_message, strlen(error_message));
-        return;
-    }
-    // Fixed path to 'index.html' in the server root directory
-    
-    snprintf(filepath, sizeof(filepath), "%sindex.html", SERVER_ROOT); 
-
-    // Attempt to open the 'index.html' file
-;
-    if (file_fd < 0) {
-        fprintf(stderr, "Error opening the file"); // If opening the file fails, send a 500 Internal Server Error response
-        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to open index.html.", 0);
+        // If the file does not exist, return a 404 Not Found error
+        perror("Failed to open file");
+        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: The requested resource was not found.", 0);
         return;
     }
 
-    // Get file details to determine its size
+    // Determine the size of the file
     struct stat file_stat;
     if (fstat(file_fd, &file_stat) < 0) {
-        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to read file stats.", 0);
+        perror("Failed to get file statistics");
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to retrieve file information.", 0);
         close(file_fd);
         return;
     }
 
-    // Allocate memory for the file content and read the file into this buffer
+    // Allocate memory and read the file content
     char *file_content = malloc(file_stat.st_size + 1);
     if (read(file_fd, file_content, file_stat.st_size) < 0) {
+        perror("Failed to read file");
         send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Error reading file.", 0);
         free(file_content);
         close(file_fd);
         return;
     }
-    file_content[file_stat.st_size] = '\0';  // Null-terminate the content
+    file_content[file_stat.st_size] = '\0'; // Null-terminate the content
 
-    // Construct and send the HTTP response with the file content
-    send_response(client_sock, "HTTP/1.1 200 OK", "text/html", file_content, file_stat.st_size);
+    
+    const char* mime_type = get_mime_type(filepath);
 
-    // Clean up
+     send_response(client_sock, "HTTP/1.1 200 OK", mime_type, file_content, file_stat.st_size);
     free(file_content);
     close(file_fd);
 }
