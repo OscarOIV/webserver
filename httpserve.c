@@ -126,17 +126,33 @@ void handle_get_request(int client_sock, const char* path) {
     // Construct the full path to the file
     snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
 
+ struct stat path_stat;
+    if (stat(filepath, &path_stat) < 0) {
+        perror("File stat failed");
+        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: File not found.", 0);
+        return;
+    }
+
+    // If it's a directory, append index.html to the filepath
+    if (S_ISDIR(path_stat.st_mode)) {
+        strncat(filepath, "/index.html", sizeof(filepath) - strlen(filepath) - 1);
+        // Check again if index.html exists
+        if (stat(filepath, &path_stat) < 0) {
+            send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: No index file found in directory.", 0);
+            return;
+        }
+    }
+
+    // Open the file
     int file_fd = open(filepath, O_RDONLY);
     if (file_fd < 0) {
-        // If the file does not exist, return a 404 Not Found error
         perror("Failed to open file");
         send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: The requested resource was not found.", 0);
         return;
     }
 
     // Determine the size of the file
-    struct stat file_stat;
-    if (fstat(file_fd, &file_stat) < 0) {
+    if (fstat(file_fd, &path_stat) < 0) {
         perror("Failed to get file statistics");
         send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to retrieve file information.", 0);
         close(file_fd);
@@ -144,26 +160,26 @@ void handle_get_request(int client_sock, const char* path) {
     }
 
     // Allocate memory and read the file content
-    char *file_content = malloc(file_stat.st_size + 1);
-    if (read(file_fd, file_content, file_stat.st_size) < 0) {
+    char *file_content = malloc(path_stat.st_size + 1);
+    if (file_content == NULL || read(file_fd, file_content, path_stat.st_size) < 0) {
         perror("Failed to read file");
         send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Error reading file.", 0);
         free(file_content);
         close(file_fd);
         return;
     }
-    file_content[file_stat.st_size] = '\0'; // Null-terminate the content
+    file_content[path_stat.st_size] = '\0'; // Null-terminate the content
 
-    
+    // Determine MIME type based on file extension
     const char* mime_type = get_mime_type(filepath);
 
-     send_response(client_sock, "HTTP/1.1 200 OK", mime_type, file_content, file_stat.st_size);
+    // Send the HTTP response with the file content
+    send_response(client_sock, "HTTP/1.1 200 OK", mime_type, file_content, path_stat.st_size);
+
+    // Clean up
     free(file_content);
     close(file_fd);
 }
-
-
-
 
 
 void handle_head_request(int client_sock, const char* path) {
@@ -248,8 +264,6 @@ void send_response(int client_sock, const char *header, const char *content_type
         send(client_sock, body, body_length, 0);
     }
 }
-
-
 
 const char* get_mime_type(const char *filename) {
     const char *dot = strrchr(filename, '.'); // Find the last occurrence of '.'
