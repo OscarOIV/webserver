@@ -11,7 +11,7 @@
 #include "httpserve.h"
 #define BACKLOG 32 
 #define SERVER_ROOT "/home/oscar/Desktop/www/"
-#define SERVER_PORT 8080 // Default server port
+
 
 char http_header[2048];
 
@@ -117,33 +117,21 @@ void process_request(int client_sock) {
 
 void handle_get_request(int client_sock, const char* path) {
     char filepath[1024];
-    if (strstr(path, "../") != NULL || strstr(path, "./") != NULL) {
-        // Basic protection against directory traversal attacks
-        send_response(client_sock, "HTTP/1.1 400 Bad Request", "text/html", "Bad Request: Invalid path.", 0);
-        return;
+
+    // Map root path "/" directly to "www/index.html"
+    if (strcmp(path, "/") == 0) {
+        strcpy(filepath, "www/index.html");  // Direct mapping to index.html under www directory
+    } else {
+        // Append the path to the www directory for other requests
+        snprintf(filepath, sizeof(filepath), "www%s", path);
     }
 
-    // Construct the full path to the file
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path);
-
- struct stat path_stat;
+    struct stat path_stat;
     if (stat(filepath, &path_stat) < 0) {
-        perror("File stat failed");
         send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: File not found.", 0);
         return;
     }
 
-    // If it's a directory, append index.html to the filepath
-    if (S_ISDIR(path_stat.st_mode)) {
-        strncat(filepath, "/index.html", sizeof(filepath) - strlen(filepath) - 1);
-        // Check again if index.html exists
-        if (stat(filepath, &path_stat) < 0) {
-            send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: No index file found in directory.", 0);
-            return;
-        }
-    }
-
-    // Open the file
     int file_fd = open(filepath, O_RDONLY);
     if (file_fd < 0) {
         perror("Failed to open file");
@@ -151,7 +139,6 @@ void handle_get_request(int client_sock, const char* path) {
         return;
     }
 
-    // Determine the size of the file
     if (fstat(file_fd, &path_stat) < 0) {
         perror("Failed to get file statistics");
         send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to retrieve file information.", 0);
@@ -159,7 +146,6 @@ void handle_get_request(int client_sock, const char* path) {
         return;
     }
 
-    // Allocate memory and read the file content
     char *file_content = malloc(path_stat.st_size + 1);
     if (file_content == NULL || read(file_fd, file_content, path_stat.st_size) < 0) {
         perror("Failed to read file");
@@ -170,13 +156,9 @@ void handle_get_request(int client_sock, const char* path) {
     }
     file_content[path_stat.st_size] = '\0'; // Null-terminate the content
 
-    // Determine MIME type based on file extension
     const char* mime_type = get_mime_type(filepath);
-
-    // Send the HTTP response with the file content
     send_response(client_sock, "HTTP/1.1 200 OK", mime_type, file_content, path_stat.st_size);
 
-    // Clean up
     free(file_content);
     close(file_fd);
 }
@@ -184,7 +166,14 @@ void handle_get_request(int client_sock, const char* path) {
 
 void handle_head_request(int client_sock, const char* path) {
     char filepath[512]; // Buffer to store the full path to the file
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path); // Construct the full path
+
+    // Map root path "/" directly to "www/index.html"
+    if (strcmp(path, "/") == 0) {
+        strcpy(filepath, "www/index.html");
+    } else {
+        // Append the path to the www directory for other requests
+        snprintf(filepath, sizeof(filepath), "www%s", path);
+    }
 
     // Prevent directory traversal security issues
     if (strstr(path, "..") != NULL) {
@@ -203,11 +192,11 @@ void handle_head_request(int client_sock, const char* path) {
 
     // Prepare and send the headers that a corresponding GET request would return
     char header[256];
-snprintf(header, sizeof(header),
-         "HTTP/1.1 200 OK\r\n"
-         "Content-Type: text/html\r\n"
-         "Content-Length: %lld\r\n\r\n", (long long)file_stat.st_size);
-send(client_sock, header, strlen(header), 0);
+    snprintf(header, sizeof(header),
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: %s\r\n"  // MIME type needs to be determined based on the file extension
+             "Content-Length: %lld\r\n\r\n", get_mime_type(filepath), (long long)file_stat.st_size);
+    send(client_sock, header, strlen(header), 0);
 }
 
 void handle_post_request(int client_sock, const char* path) {
