@@ -10,7 +10,7 @@
 #include <errno.h> // Include the necessary header file
 #include "httpserve.h"
 #define BACKLOG 32 
-#define SERVER_ROOT "/home/oscar/Desktop/www/"
+
 
 
 char http_header[2048];
@@ -201,7 +201,15 @@ void handle_head_request(int client_sock, const char* path) {
 
 void handle_post_request(int client_sock, const char* path) {
     char filepath[512];  // Buffer for constructing the full path to the resource
-    snprintf(filepath, sizeof(filepath), "%s%s", SERVER_ROOT, path); // Combine SERVER_ROOT with the path
+
+    // If the request is for the root, map directly to www/index.html
+    // Though for POST, we might want to handle it differently since index.html is usually not a script
+    if (strcmp(path, "/") == 0) {
+        strcpy(filepath, "www/index.html");  // Adjust accordingly if POST should target a different resource at root
+    } else {
+        // Construct the path assuming all resources are within the 'www' directory
+        snprintf(filepath, sizeof(filepath), "www%s", path);
+    }
 
     // Check if the path corresponds to a CGI script
     if (strstr(filepath, ".cgi") != NULL) {
@@ -230,10 +238,12 @@ void handle_post_request(int client_sock, const char* path) {
             send(client_sock, error_response, strlen(error_response), 0);
         }
     } else {
+        // If no CGI script is found, respond with 404 Not Found
         const char *not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
         send(client_sock, not_found_response, strlen(not_found_response), 0);
     }
 }
+
 void send_response(int client_sock, const char *header, const char *content_type, const char *body, int body_length) {
     char response_header[1024]; // Buffer for the HTTP response header
 
