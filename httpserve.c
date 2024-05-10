@@ -7,57 +7,59 @@
 #include <sys/stat.h>
 #include <fcntl.h> 
 #include <sys/wait.h>
-#include <errno.h> // Include the necessary header file
+#include <errno.h> 
 #include "httpserve.h"
 #define BACKLOG 32 
 
 
-void log_message(const char *message);
-char http_header[2048];
+void logMsg(const char *msg); //log function
+char httpHead[2048];//buffer for http header
 
 int main(int argc, char *argv[]) {
-    int port = SERVER_PORT;
+    int port = SERVER_PORT;//getting port num
     if (argc > 1) {
-        port = atoi(argv[1]); 
+        port = atoi(argv[1]); //changing port num
         if (port <= 0) {
             fprintf(stderr, "Invalid port number provided. Using default port %d\n", SERVER_PORT);
             port = SERVER_PORT;  
         }
     }
-     log_message("Server starting...");
+     logMsg("Server starting...");//start log msg
     start_server(port);
-    log_message("Server stopped.");
+    logMsg("Server stopped.");//end log msg
     return 0;
 }
-void log_message(const char *message) {
-    printf("%s\n", message);
+void logMsg(const char *msg) {//log function
+    printf("%s\n", msg);
 }
-void start_server(int port) {
-    int server_sock = create_socket(port);
+void start_server(int port) {//beginnninng of server
+    int server_sock = create_socket(port);//call to each function
     handle_connections(server_sock);
     close(server_sock);
 }
 
 int create_socket(int port) {
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);//intialize socket
     if (sockfd < 0) {
-        perror("Error creating socket");
+        perror("Error creating socket");//error msg check
         exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in server_addr = {0};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_family = AF_INET;//setting up server address
+
+    server_addr.sin_addr.s_addr = INADDR_ANY;//
+
     server_addr.sin_port = htons(port);
 
-    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {//binding socket
         perror("Bind failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
 
-    if (listen(sockfd, BACKLOG) < 0) {
-        perror("Error listening on socket");
+    if (listen(sockfd, BACKLOG) < 0) {//listening on socket
+        perror("Error listening on socket");//error msg check
         close(sockfd);
         exit(EXIT_FAILURE);
     }
@@ -66,230 +68,248 @@ int create_socket(int port) {
 }
 
 void handle_connections(int server_sock) {
-    struct sockaddr_in client_addr;
-    socklen_t client_addrlen = sizeof(client_addr);
+
+    struct sockaddr_in client_addr;//structure for client
+
+    socklen_t client_addrlen = sizeof(client_addr);//settingn size
+
     int client_sock;
 
-    while ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addrlen)) >= 0) {
-          log_message("Accepted new connection");
+    while ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addrlen)) >= 0) {//accepting connection
+
+          logMsg("New connection accepted");//logging
         process_request(client_sock);
     }
 
     if (client_sock < 0) {
-        perror("Error accepting connection");
+
+        perror("error accepting");
     }
 }
 
 
 void process_request(int client_sock) {
-    char buffer[4096]; // Buffer to store the request
-    int bytes_read = read(client_sock, buffer, sizeof(buffer) - 1); // Read the request from the client socket
+    char buff[4096]; //buffer for request
 
-    if (bytes_read <= 0) {
-        perror("Error reading from socket or connection closed");
+    int bytes_read = read(client_sock, buff, sizeof(buff) - 1); // Read the request from the client socket
+
+    if (bytes_read <= 0) {//error check forreaing 
         close(client_sock);
         return;
     }
 
-    buffer[bytes_read] = '\0'; // Null-terminate the buffer to create a valid string
+    buff[bytes_read] = '\0'; //null terminate for string tokenization
 
     char *method, *path, *protocol, *saveptr;
-    method = strtok_r(buffer, " ", &saveptr); // Extract the method from the request
-    path = strtok_r(NULL, " ", &saveptr); // Extract the path from the request
-    protocol = strtok_r(NULL, "\r\n", &saveptr); // Extract the protocol version
 
-    if (!method || !path || !protocol) {
+    method = strtok_r(buff, " ", &saveptr); 
+
+    path = strtok_r(NULL, " ", &saveptr); 
+
+    protocol = strtok_r(NULL, "\r\n", &saveptr); 
+
+    if (!method || !path || !protocol) {//check for valid request
         fprintf(stderr, "Invalid HTTP request line\n");
+
         close(client_sock);
         return;
     }
-    char log_buffer[1024];
-    snprintf(log_buffer, sizeof(log_buffer), "Received %s request for %s", method, path);
-    log_message(log_buffer);
-    // Dispatch to the appropriate handler based on the method
-    if (strcmp(method, "GET") == 0) {
+    char lgbuff[1024];//buffer for log msg
+
+    snprintf(lgbuff, sizeof(lgbuff), "Received %s request for %s", method, path);
+    logMsg(lgbuff);
+    
+    if (strcmp(method, "GET") == 0) {//checking for method and calling its function
         handle_get_request(client_sock, path);
+
     } else if (strcmp(method, "HEAD") == 0) {
         handle_head_request(client_sock, path);
+
     } else if (strcmp(method, "POST") == 0) {
         handle_post_request(client_sock, path);
+
     } else {
-        // If the method is not supported, send a 501 Not Implemented response
-        const char *response = "HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\n\r\n";
+               const char *response = "HTTP/1.1 501 Not a method\r\nContent-Length: 0\r\n\r\n";//just incase of wrong methof
         send(client_sock, response, strlen(response), 0);
     }
-
     close(client_sock); // Close the client socket after handling the request
 }
 
 void handle_get_request(int client_sock, const char* path) {
-    char filepath[1024];
+    char fPath[1024];//giving buffer for file pth
 
-    // Map root path "/" directly to "www/index.html"
-    if (strcmp(path, "/") == 0) {
-        strcpy(filepath, "www/index.html");  // Direct mapping to index.html under www directory
+   
+    if (strcmp(path, "/") == 0) {//mapping path to correct file path
+        strcpy(fPath, "www/index.html");  
     } else {
-        // Append the path to the www directory for other requests
-        snprintf(filepath, sizeof(filepath), "www%s", path);
+                snprintf(fPath, sizeof(fPath), "www%s", path);// snprintf to avoid buffer overfloW
     }
-     const char* mime_type = get_mime_type(filepath);
-    if (mime_type == NULL) {  // Check if the MIME type is unsupported
-        send_response(client_sock, "HTTP/1.1 415 Unsupported Media Type", "text/plain", "415 Unsupported Media Type: The requested resource type is not supported.", 0);
+     const char* mime_type = get_mime_type(fPath);//getting mime type
+
+    if (mime_type == NULL) {  //error responses 415 invalid media type
+        send_response(client_sock, "HTTP/1.1 415 Unsupported Media Type", "text/plain", "415 Unsupported Media Type: file type not supported", 0);
         return;
     }
 
-    struct stat path_stat;
-    if (stat(filepath, &path_stat) < 0) {
-        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: File not found.", 0);
+    struct stat pathStat;
+
+    if (stat(fPath, &pathStat) < 0) {//checking for file
+        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: file not found.", 0);
         return;
     }
 
-    int file_fd = open(filepath, O_RDONLY);
-    if (file_fd < 0) {
-        perror("Failed to open file");
-        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: The requested resource was not found.", 0);
+    int fileFd = open(fPath, O_RDONLY);//opening file
+
+    if (fileFd < 0) {
+        perror("file open failed");
+        send_response(client_sock, "HTTP/1.1 404 Not Found", "text/html", "404 Not Found: file not found.", 0);
         return;
     }
 
-    if (fstat(file_fd, &path_stat) < 0) {
+    if (fstat(fileFd, &pathStat) < 0) {//checking for file stats
         perror("Failed to get file statistics");
-        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Unable to retrieve file information.", 0);
-        close(file_fd);
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Couldnt get info.", 0);
+        close(fileFd);
         return;
     }
 
-    char *file_content = malloc(path_stat.st_size + 1);
-    if (file_content == NULL || read(file_fd, file_content, path_stat.st_size) < 0) {
-        perror("Failed to read file");
-        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: Error reading file.", 0);
-        free(file_content);
-        close(file_fd);
+    char *fileCont = malloc(pathStat.st_size + 1);//allocating memory for file content
+
+    if (fileCont == NULL || read(fileFd, fileCont, pathStat.st_size) < 0) {//reading file
+        perror("unable to read file");
+        send_response(client_sock, "HTTP/1.1 500 Internal Server Error", "text/html", "500 Internal Server Error: unable to read file.", 0);
+        free(fileCont);
+        close(fileFd);
         return;
     }
-    file_content[path_stat.st_size] = '\0'; // Null-terminate the content
+    fileCont[pathStat.st_size] = '\0';//null terminate
 
-    const char* mime_type = get_mime_type(filepath);
-    send_response(client_sock, "HTTP/1.1 200 OK", mime_type, file_content, path_stat.st_size);
+    
+    send_response(client_sock, "HTTP/1.1 200 OK", mime_type, fileCont, pathStat.st_size);//sending response to client
 
-    free(file_content);
-    close(file_fd);
+    free(fileCont);//free file content
+    close(fileFd);//close file descriptor
 }
 
 
 void handle_head_request(int client_sock, const char* path) {
-    char filepath[512]; // Buffer to store the full path to the file
+    char fPath[512]; //setting up buffer for file path
 
-    // Map root path "/" directly to "www/index.html"
-    if (strcmp(path, "/") == 0) {
-        strcpy(filepath, "www/index.html");
+   
+    if (strcmp(path, "/") == 0) {//mapping path to correct file path
+        strcpy(fPath, "www/index.html");
+
     } else {
-        // Append the path to the www directory for other requests
-        snprintf(filepath, sizeof(filepath), "www%s", path);
+            snprintf(fPath, sizeof(fPath), "www%s", path);
     }
 
-    // Prevent directory traversal security issues
-    if (strstr(path, "..") != NULL) {
-        const char *error_response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, error_response, strlen(error_response), 0);
+    
+    if (strstr(path, "..") != NULL) {//checking for invalid path
+        const char *errorMsg = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, errorMsg, strlen(errorMsg), 0);
         return;
     }
 
-    struct stat file_stat;
-    if (stat(filepath, &file_stat) < 0 || S_ISDIR(file_stat.st_mode)) {
-        // File does not exist or is a directory
-        const char *not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, not_found_response, strlen(not_found_response), 0);
+    struct stat fStat;//structing file stats
+
+    if (stat(fPath, &fStat) < 0 || S_ISDIR(fStat.st_mode)) {//if file not found or its a directory
+               const char *notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, notFound, strlen(notFound), 0);
         return;
     }
 
-    // Prepare and send the headers that a corresponding GET request would return
-    char header[256];
-    snprintf(header, sizeof(header),
+    
+    char header[256];//buffer for header
+
+    snprintf(header, sizeof(header),//printing out header
              "HTTP/1.1 200 OK\r\n"
-             "Content-Type: %s\r\n"  // MIME type needs to be determined based on the file extension
-             "Content-Length: %lld\r\n\r\n", get_mime_type(filepath), (long long)file_stat.st_size);
-    send(client_sock, header, strlen(header), 0);
+             "Content-Type: %s\r\n"  
+             "Content-Length: %lld\r\n\r\n", get_mime_type(fPath), (long long)fStat.st_size);
+    send(client_sock, header, strlen(header), 0);//send to client
 }
 
-void handle_post_request(int client_sock, const char* path) {
-    char filepath[512];  // Buffer for constructing the full path to the resource
+void handle_post_request(int client_sock, const char* path) {// this is an attempt to handle post request. not finished 
+    char fPath[512];  //another buff
 
-    // If the request is for the root, map directly to www/index.html
-    // Though for POST, we might want to handle it differently since index.html is usually not a script
-    if (strcmp(path, "/") == 0) {
-        strcpy(filepath, "www/index.html");  // Adjust accordingly if POST should target a different resource at root
+    if (strcmp(path, "/") == 0) {//mapping once again
+        strcpy(fPath, "www/index.html"); 
+
     } else {
-        // Construct the path assuming all resources are within the 'www' directory
-        snprintf(filepath, sizeof(filepath), "www%s", path);
+            snprintf(fPath, sizeof(fPath), "www%s", path);
     }
 
-    // Check if the path corresponds to a CGI script
-    if (strstr(filepath, ".cgi") != NULL) {
-        int pid = fork();  // Create a new process
-        if (pid == 0) {    // Child process
-            // Set the environment variable REQUEST_METHOD
-            setenv("REQUEST_METHOD", "POST", 1);
+    if (strstr(fPath, ".cgi") != NULL) {//checking for cgi file
+        int pid = fork();  
 
-            // Duplicate socket on stdout and stderr
+        if (pid == 0) {   //waitpidforking process
+            
+            setenv("REQUEST_METHOD", "POST", 1);//setting up env variables
+
+            
             dup2(client_sock, STDOUT_FILENO);
             dup2(client_sock, STDERR_FILENO);
 
-            // Execute the CGI script
-            execl(filepath, filepath, NULL);
+            
+            execl(fPath, fPath, NULL);//executing cgi script
             perror("Failed to execute CGI script");
             exit(EXIT_FAILURE);
-        } else if (pid > 0) {  // Parent process
+
+        } else if (pid > 0) {  
             int status;
-            waitpid(pid, &status, 0);  // Wait for the script to finish
-            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-                const char *error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-                send(client_sock, error_response, strlen(error_response), 0);
+
+            waitpid(pid, &status, 0); 
+
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {//checking exiting statis
+                const char *errorMsg = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+                send(client_sock, errorMsg, strlen(errorMsg), 0);
             }
-        } else {  // Fork failed
-            const char *error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-            send(client_sock, error_response, strlen(error_response), 0);
+
+        } else { 
+            const char *errorMsg = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+            send(client_sock, errorMsg, strlen(errorMsg), 0);
         }
+
     } else {
-        // If no CGI script is found, respond with 404 Not Found
-        const char *not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-        send(client_sock, not_found_response, strlen(not_found_response), 0);
+       
+        const char *notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        send(client_sock, notFound, strlen(notFound), 0);
     }
 }
 
 void send_response(int client_sock, const char *header, const char *content_type, const char *body, int body_length) {
-    char response_header[1024]; // Buffer for the HTTP response header
+    char responseHead[1024]; //buffer for response header
 
-    // Construct the response header
-    int header_length = snprintf(response_header, sizeof(response_header),
+    
+    int headLength = snprintf(responseHead, sizeof(responseHead),//printing out header
                                  "%s\r\n"
                                  "Content-Type: %s\r\n"
                                  "Content-Length: %d\r\n"
                                  "\r\n",
                                  header, content_type, body_length);
 
-    // Send the header
-    send(client_sock, response_header, header_length, 0);
+    
+    send(client_sock, responseHead, headLength, 0);//sending header
 
-    // Send the body if it exists and body_length is greater than 0
-    if (body && body_length > 0) {
+    
+    if (body && body_length > 0) {//sending body to client and is greater than 0
         send(client_sock, body, body_length, 0);
     }
 }
 
 const char* get_mime_type(const char *filename) {
-    const char *dot = strrchr(filename, '.'); // Find the last occurrence of '.'
+    const char *p = strrchr(filename, '.'); //grabbing file extensio
 
-    if (!dot || dot == filename) {
-        return NULL; // Indicate unsupported file type
+    if (!p || p == filename) {//making sure its not null
+        return NULL;
     }
 
-    // Compare the extension and return the MIME type
-    if (strcmp(dot, ".html") == 0) return "text/html";
-    else if (strcmp(dot, ".css") == 0) return "text/css";
-    else if (strcmp(dot, ".js") == 0) return "application/javascript";
-    else if (strcmp(dot, ".png") == 0) return "image/png";
-    else if (strcmp(dot, ".jpeg") == 0 || strcmp(dot, ".jpg") == 0) return "image/jpeg";
-    else if (strcmp(dot, ".gif") == 0) return "image/gif";
-    else if (strcmp(dot, ".txt") == 0) return "text/plain";
-    else return NULL; // Unsupported file type
+   
+    if (strcmp(p, ".html") == 0) return "text/html";
+    else if (strcmp(p, ".css") == 0) return "text/css";
+    else if (strcmp(p, ".js") == 0) return "application/javascript";
+    else if (strcmp(p, ".png") == 0) return "image/png";
+    else if (strcmp(p, ".jpeg") == 0 || strcmp(p, ".jpg") == 0) return "image/jpeg";
+    else if (strcmp(p, ".gif") == 0) return "image/gif";
+    else if (strcmp(p, ".txt") == 0) return "text/plain";
+    else return NULL; //returning null if not there 
 }
