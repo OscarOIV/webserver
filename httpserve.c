@@ -12,7 +12,7 @@
 #define BACKLOG 32 
 
 
-
+void log_message(const char *message);
 char http_header[2048];
 
 int main(int argc, char *argv[]) {
@@ -24,10 +24,14 @@ int main(int argc, char *argv[]) {
             port = SERVER_PORT;  
         }
     }
+     log_message("Server starting...");
     start_server(port);
+    log_message("Server stopped.");
     return 0;
 }
-
+void log_message(const char *message) {
+    printf("%s\n", message);
+}
 void start_server(int port) {
     int server_sock = create_socket(port);
     handle_connections(server_sock);
@@ -67,6 +71,7 @@ void handle_connections(int server_sock) {
     int client_sock;
 
     while ((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &client_addrlen)) >= 0) {
+          log_message("Accepted new connection");
         process_request(client_sock);
     }
 
@@ -98,7 +103,9 @@ void process_request(int client_sock) {
         close(client_sock);
         return;
     }
-
+    char log_buffer[1024];
+    snprintf(log_buffer, sizeof(log_buffer), "Received %s request for %s", method, path);
+    log_message(log_buffer);
     // Dispatch to the appropriate handler based on the method
     if (strcmp(method, "GET") == 0) {
         handle_get_request(client_sock, path);
@@ -124,6 +131,11 @@ void handle_get_request(int client_sock, const char* path) {
     } else {
         // Append the path to the www directory for other requests
         snprintf(filepath, sizeof(filepath), "www%s", path);
+    }
+     const char* mime_type = get_mime_type(filepath);
+    if (mime_type == NULL) {  // Check if the MIME type is unsupported
+        send_response(client_sock, "HTTP/1.1 415 Unsupported Media Type", "text/plain", "415 Unsupported Media Type: The requested resource type is not supported.", 0);
+        return;
     }
 
     struct stat path_stat;
@@ -268,7 +280,7 @@ const char* get_mime_type(const char *filename) {
     const char *dot = strrchr(filename, '.'); // Find the last occurrence of '.'
 
     if (!dot || dot == filename) {
-        return "application/octet-stream"; // Default MIME type for unknown files
+        return NULL; // Indicate unsupported file type
     }
 
     // Compare the extension and return the MIME type
@@ -279,6 +291,5 @@ const char* get_mime_type(const char *filename) {
     else if (strcmp(dot, ".jpeg") == 0 || strcmp(dot, ".jpg") == 0) return "image/jpeg";
     else if (strcmp(dot, ".gif") == 0) return "image/gif";
     else if (strcmp(dot, ".txt") == 0) return "text/plain";
-
-    return "application/octet-stream"; // Fallback MIME type
+    else return NULL; // Unsupported file type
 }
