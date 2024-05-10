@@ -68,14 +68,17 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-
+    // printf("[\n");
     // Existing code logic for processing files
     if (Options.all) {
+        printf("[\n");
         const char *path = Options.path ? Options.path : ".";
         list_directory(path, fileInfo, argv);
+        printf("]\n");
     } else if (Options.path && validate_file(&fileInfo) == 0) {
         if (Options.json) {
             print_JSON_Output(Options.path, getNumber(&fileInfo), getType(&fileInfo), getPermissions(&fileInfo), getLinkCount(&fileInfo), getUid(&fileInfo), getGid(&fileInfo), getSize(&fileInfo), getAccessTime(&fileInfo, Options.human), getModTime(&fileInfo, Options.human), getStatusChangeTime(&fileInfo, Options.human));
+            // printf("]\n");
         } else {
             print_console_Output(&fileInfo, argv);
         }
@@ -124,16 +127,15 @@ void list_directory(const char *path, struct stat fileInfo, char** argv) {
                               getPermissions(&fileStat), getLinkCount(&fileStat), getUid(&fileStat),
                               getGid(&fileStat), getSize(&fileStat), getAccessTime(&fileStat, Options.human),
                               getModTime(&fileStat, Options.human), getStatusChangeTime(&fileStat, Options.human));
+            // printf("]\n");
         } else {
             print_console_Output(&fileStat, argv);
         }
     }
-    
     closedir(dir);
 }
 
 //do redirection, before parsing and printing so log stuff
-
 void parseargs(int argc, char **argv) {
     // validate there are enough args no put help 
     if (argc <= 1) {
@@ -285,18 +287,18 @@ void print_console_Output(struct stat* fileInfo, char** argv){
     printf("File Size: %s\n", sizeStr);  // Use formatted size
     printf("Last Access Time: %s\n", accessTime);
     printf("Last Modification Time: %s\n", modTime);
-    printf("Last Status Change Time: %s\n", statusChangeTime);
+    printf("Last Status Change Time: %s\n\n", statusChangeTime);
 
-    printf("\nChecking to see if the Options Values are changing....\n\n");
-    printf("Options:\n");
-    printf("  human: %d\n", Options.human);
-    printf("  all: %d\n", Options.all);
-    printf("  format: %d\n", Options.format);
-    printf("  json: %d\n", Options.json);
-    printf("  log: %d\n", Options.log);
-    printf("  inode: %d\n", Options.inode);
-    printf("  logPath: %s\n", Options.logPath ? Options.logPath : "NULL");
-    printf("  path: %s\n", Options.path ? Options.path : "NULL");
+    // printf("\nChecking to see if the Options Values are changing....\n\n");
+    // printf("Options:\n");
+    // printf("  human: %d\n", Options.human);
+    // printf("  all: %d\n", Options.all);
+    // printf("  format: %d\n", Options.format);
+    // printf("  json: %d\n", Options.json);
+    // printf("  log: %d\n", Options.log);
+    // printf("  inode: %d\n", Options.inode);
+    // printf("  logPath: %s\n", Options.logPath ? Options.logPath : "NULL");
+    // printf("  path: %s\n", Options.path ? Options.path : "NULL");
 
     free(accessTime);
     free(modTime);
@@ -582,5 +584,4 @@ void help(){
   printf("  -l, --log <log_file>:       Log operations to a specified file.\n");
   printf("   Example: inspect -i /path/to/file -l /path/to/logfile\n\n");
 }
-
 
