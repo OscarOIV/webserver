@@ -20,13 +20,13 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         port = atoi(argv[1]); //changing port num
         if (port <= 0) {
-            fprintf(stderr, "Invalid port number provided. Using default port %d\n", SERVER_PORT);
+            fprintf(stderr, "invalid port. Defaulting to set port %d\n", SERVER_PORT);
             port = SERVER_PORT;  
         }
     }
-     logMsg("Server starting...");//start log msg
+     logMsg("starting server...");//start log msg
     start_server(port);
-    logMsg("Server stopped.");//end log msg
+    logMsg("server stopped.");//end log msg
     return 0;
 }
 void logMsg(const char *msg) {//log function
@@ -251,7 +251,7 @@ void handle_post_request(int client_sock, const char* path) {// this is an attem
 
             
             execl(fPath, fPath, NULL);//executing cgi script
-            perror("Failed to execute CGI script");
+            perror("didnt execute cgi script");
             exit(EXIT_FAILURE);
 
         } else if (pid > 0) {  
