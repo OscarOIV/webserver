@@ -45,14 +45,14 @@ int create_socket(int port) {
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in server_addr = {0};
-    server_addr.sin_family = AF_INET;//setting up server address
+    struct sockaddr_in server_adrs = {0};
+    server_adrs.sin_family = AF_INET;//setting up server address
 
-    server_addr.sin_addr.s_addr = INADDR_ANY;//
+    server_adrs.sin_addr.s_addr = INADDR_ANY;//
 
-    server_addr.sin_port = htons(port);
+    server_adrs.sin_port = htons(port);
 
-    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {//binding socket
+    if (bind(sockfd, (struct sockaddr *)&server_adrs, sizeof(server_adrs)) < 0) {//binding socket
         perror("Bind failed");
         close(sockfd);
         exit(EXIT_FAILURE);
