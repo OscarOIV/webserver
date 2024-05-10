@@ -258,7 +258,7 @@ int longArgs(char* opt) {
  
 void print_console_Output(struct stat* fileInfo, char** argv){
     printf("\nInfo for: %s:\n", argv[1]);
-    printf("File Inode: %llu\n", fileInfo->st_ino);
+    printf("File Inode: %lu\n", fileInfo->st_ino);
     printf("File Type: ");
     if (S_ISREG(fileInfo->st_mode))
         printf("regular file\n");
@@ -283,7 +283,7 @@ void print_console_Output(struct stat* fileInfo, char** argv){
     char* modTime = getModTime(fileInfo, Options.human);
     char* statusChangeTime = getStatusChangeTime(fileInfo, Options.human);
 
-    printf("Number of Hard Links: %hu\n", fileInfo->st_nlink);
+    printf("Number of Hard Links: %lu\n", fileInfo->st_nlink);
     printf("File Size: %s\n", sizeStr);  // Use formatted size
     printf("Last Access Time: %s\n", accessTime);
     printf("Last Modification Time: %s\n", modTime);
@@ -584,4 +584,3 @@ void help(){
   printf("  -l, --log <log_file>:       Log operations to a specified file.\n");
   printf("   Example: inspect -i /path/to/file -l /path/to/logfile\n\n");
 }
-
