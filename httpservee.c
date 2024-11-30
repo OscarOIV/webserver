@@ -13,10 +13,10 @@
 #define BACKLOG 32
 #define SESSION_ID_LENGTH 16
 
-// In-memory session store (key-value pairs for sessionId -> userData)
+
 typedef struct Session {
     char sessionId[SESSION_ID_LENGTH + 1];
-    char userData[256]; // Example: storing user-specific data
+    char userData[256]; 
 } Session;
 
 Session sessionStore[100]; // Simple array-based store
@@ -126,7 +126,7 @@ void process_request(int client_sock) {
         return;
     }
 
-    // Extract sessionId from the request's cookies
+   
     char *sessionId = get_cookie(buff, "sessionId");
 
     if (strcmp(method, "GET") == 0) {
@@ -143,15 +143,15 @@ void handle_get_request(int client_sock, const char *path, char *sessionId) {
     Session *session = sessionId ? get_session(sessionId) : NULL;
 
     if (!session) {
-        // Create a new session if none exists
+       
         session = create_session();
     }
 
-    // Example response with session tracking
+   
     char body[512];
-    snprintf(body, sizeof(body), "<h1>Welcome to the server!</h1><p>Your session ID: %s</p>", session->sessionId);
+    snprintf(body, sizeof(body), "<h1>Welcome to the WEB site!</h1><p>Your session ID: %s</p>", session->sessionId);
 
-    // Set the session cookie
+    
     char cookie[256];
     snprintf(cookie, sizeof(cookie), "Set-Cookie: sessionId=%s; Path=/; HttpOnly", session->sessionId);
 
